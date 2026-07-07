@@ -84,7 +84,6 @@ class RiskResult:
 
 
 class RiskManager:
-
     """
     Master Risk Engine
 
@@ -133,58 +132,34 @@ class RiskManager:
 
     MAX_SECTOR_RISK = 50.0
 
+    MAX_DAILY_LOSS = 5.0  # <--- FIXED: Added missing class variable
+
     def evaluate(
-
         self,
-
         validation: ValidationResult,
-
         decision: FinalDecision,
-
         dataframe: pd.DataFrame,
-
         portfolio: dict[str, Any],
-
         market: dict[str, Any],
-
     ) -> RiskResult:
 
         if not validation.passed:
 
             return RiskResult(
-
                 safe=False,
-
                 total_risk=100.0,
-
                 risk_grade="REJECT",
-
                 atr_risk=100,
-
                 gap_risk=100,
-
                 overnight_risk=100,
-
                 news_risk=100,
-
                 liquidity_risk=100,
-
                 volatility_risk=100,
-
                 portfolio_risk=100,
-
                 sector_risk=100,
-
                 correlation_risk=100,
-
                 capital_risk=100,
-
-                warnings=[
-
-                    "Validation engine rejected trade."
-
-                ],
-
+                warnings=["Validation engine rejected trade."],
             )
 
         latest = dataframe.iloc[-1]
@@ -193,54 +168,16 @@ class RiskManager:
 
         diagnostics = {}
 
-        logger.info(
+        logger.info("Starting Risk Manager.")
+        # ==========================================================
+        # ATR RISK
+        # ==========================================================
 
-            "Starting Risk Manager."
+        atr = float(latest.get("atr_14", 0.0))
 
-        )
-# ==========================================================
-# ATR RISK
-# ==========================================================
+        close = float(latest.get("close", 1.0))
 
-        atr = float(
-
-            latest.get(
-
-                "atr_14",
-
-                0.0,
-
-            )
-
-        )
-
-        close = float(
-
-            latest.get(
-
-                "close",
-
-                1.0,
-
-            )
-
-        )
-
-        atr_percent = (
-
-            atr
-
-            /
-
-            max(
-
-                close,
-
-                1.0,
-
-            )
-
-        ) * 100
+        atr_percent = (atr / max(close, 1.0)) * 100
 
         if atr_percent <= 1.0:
 
@@ -262,62 +199,27 @@ class RiskManager:
 
             atr_risk = 95.0
 
-        diagnostics["atr_percent"] = round(
-
-            atr_percent,
-
-            2,
-
-        )
+        diagnostics["atr_percent"] = round(atr_percent, 2)
 
         diagnostics["atr_risk"] = atr_risk
 
         if atr_risk >= 70:
 
-            warnings.append(
+            warnings.append("ATR indicates excessive volatility.")
 
-                "ATR indicates excessive volatility."
+        # ==========================================================
+        # GAP RISK
+        # ==========================================================
 
-            )
+        gap_up = bool(latest.get("gap_up", False))
 
-
-# ==========================================================
-# GAP RISK
-# ==========================================================
-
-        gap_up = bool(
-
-            latest.get(
-
-                "gap_up",
-
-                False,
-
-            )
-
-        )
-
-        gap_down = bool(
-
-            latest.get(
-
-                "gap_down",
-
-                False,
-
-            )
-
-        )
+        gap_down = bool(latest.get("gap_down", False))
 
         if gap_up or gap_down:
 
             gap_risk = 75.0
 
-            warnings.append(
-
-                "Gap detected."
-
-            )
+            warnings.append("Gap detected.")
 
         else:
 
@@ -325,34 +227,13 @@ class RiskManager:
 
         diagnostics["gap_risk"] = gap_risk
 
+        # ==========================================================
+        # OVERNIGHT RISK
+        # ==========================================================
 
-# ==========================================================
-# OVERNIGHT RISK
-# ==========================================================
+        overnight = bool(market.get("overnight", False))
 
-        overnight = bool(
-
-            market.get(
-
-                "overnight",
-
-                False,
-
-            )
-
-        )
-
-        event_day = bool(
-
-            market.get(
-
-                "event_day",
-
-                False,
-
-            )
-
-        )
+        event_day = bool(market.get("event_day", False))
 
         if overnight:
 
@@ -366,38 +247,17 @@ class RiskManager:
 
             overnight_risk += 25.0
 
-            warnings.append(
+            warnings.append("High-impact event scheduled.")
 
-                "High-impact event scheduled."
-
-            )
-
-        overnight_risk = min(
-
-            overnight_risk,
-
-            100.0,
-
-        )
+        overnight_risk = min(overnight_risk, 100.0)
 
         diagnostics["overnight_risk"] = overnight_risk
 
+        # ==========================================================
+        # NEWS RISK
+        # ==========================================================
 
-# ==========================================================
-# NEWS RISK
-# ==========================================================
-
-        news_impact = float(
-
-            market.get(
-
-                "news_impact",
-
-                0.0,
-
-            )
-
-        )
+        news_impact = float(market.get("news_impact", 0.0))
 
         if news_impact <= 20:
 
@@ -423,50 +283,16 @@ class RiskManager:
 
         if news_risk >= self.MAX_NEWS_RISK:
 
-            warnings.append(
+            warnings.append("High news-driven risk.")
+        # ==========================================================
+        # LIQUIDITY RISK
+        # ==========================================================
 
-                "High news-driven risk."
+        average_volume = float(latest.get("volume_sma_20", 0.0))
 
-            )
-# ==========================================================
-# LIQUIDITY RISK
-# ==========================================================
+        spread = float(latest.get("spread", 0.0))
 
-        average_volume = float(
-
-            latest.get(
-
-                "volume_sma_20",
-
-                0.0,
-
-            )
-
-        )
-
-        spread = float(
-
-            latest.get(
-
-                "spread",
-
-                0.0,
-
-            )
-
-        )
-
-        turnover = float(
-
-            latest.get(
-
-                "turnover",
-
-                0.0,
-
-            )
-
-        )
+        turnover = float(latest.get("turnover", 0.0))
 
         liquidity_risk = 0.0
 
@@ -486,13 +312,7 @@ class RiskManager:
 
             liquidity_risk += 20.0
 
-        liquidity_risk = min(
-
-            liquidity_risk,
-
-            100.0,
-
-        )
+        liquidity_risk = min(liquidity_risk, 100.0)
 
         diagnostics["average_volume"] = average_volume
 
@@ -504,40 +324,15 @@ class RiskManager:
 
         if liquidity_risk >= 60:
 
-            warnings.append(
+            warnings.append("Poor market liquidity.")
 
-                "Poor market liquidity."
+        # ==========================================================
+        # VOLATILITY RISK
+        # ==========================================================
 
-            )
+        volatility_state = str(latest.get("volatility_state", "NORMAL")).upper()
 
-
-# ==========================================================
-# VOLATILITY RISK
-# ==========================================================
-
-        volatility_state = str(
-
-            latest.get(
-
-                "volatility_state",
-
-                "NORMAL",
-
-            )
-
-        ).upper()
-
-        bb_width = float(
-
-            latest.get(
-
-                "bb_width",
-
-                0.0,
-
-            )
-
-        )
+        bb_width = float(latest.get("bb_width", 0.0))
 
         volatility_risk = 0.0
 
@@ -565,60 +360,23 @@ class RiskManager:
 
             volatility_risk += 8.0
 
-        volatility_risk = min(
+        volatility_risk = min(volatility_risk, 100.0)
 
-            volatility_risk,
-
-            100.0,
-
-        )
-
-        diagnostics["bb_width"] = round(
-
-            bb_width,
-
-            4,
-
-        )
+        diagnostics["bb_width"] = round(bb_width, 4)
 
         diagnostics["volatility_risk"] = volatility_risk
 
         if volatility_risk >= 70:
 
-            warnings.append(
+            warnings.append("Volatility exceeds acceptable limit.")
 
-                "Volatility exceeds acceptable limit."
+        # ==========================================================
+        # MARKET RISK
+        # ==========================================================
 
-            )
+        market_regime = str(latest.get("market_regime", "SIDEWAYS")).upper()
 
-
-# ==========================================================
-# MARKET RISK
-# ==========================================================
-
-        market_regime = str(
-
-            latest.get(
-
-                "market_regime",
-
-                "SIDEWAYS",
-
-            )
-
-        ).upper()
-
-        vix = float(
-
-            market.get(
-
-                "vix",
-
-                20.0,
-
-            )
-
-        )
+        vix = float(market.get("vix", 20.0))
 
         market_risk = 20.0
 
@@ -638,13 +396,7 @@ class RiskManager:
 
             market_risk += 10.0
 
-        market_risk = min(
-
-            market_risk,
-
-            100.0,
-
-        )
+        market_risk = min(market_risk, 100.0)
 
         diagnostics["market_regime"] = market_regime
 
@@ -654,38 +406,14 @@ class RiskManager:
 
         if market_risk >= 70:
 
-            warnings.append(
+            warnings.append("Overall market risk is elevated.")
+        # ==========================================================
+        # PORTFOLIO RISK
+        # ==========================================================
 
-                "Overall market risk is elevated."
+        open_positions = int(portfolio.get("open_positions_count", 0))
 
-            )
-# ==========================================================
-# PORTFOLIO RISK
-# ==========================================================
-
-        open_positions = int(
-
-            portfolio.get(
-
-                "open_positions_count",
-
-                0,
-
-            )
-
-        )
-
-        portfolio_exposure = float(
-
-            portfolio.get(
-
-                "open_exposure",
-
-                0.0,
-
-            )
-
-        )
+        portfolio_exposure = float(portfolio.get("open_exposure", 0.0))
 
         portfolio_risk = 0.0
 
@@ -713,50 +441,23 @@ class RiskManager:
 
             portfolio_risk += 10.0
 
-        portfolio_risk = min(
-
-            portfolio_risk,
-
-            100.0,
-
-        )
+        portfolio_risk = min(portfolio_risk, 100.0)
 
         diagnostics["portfolio_risk"] = portfolio_risk
 
         diagnostics["open_positions"] = open_positions
 
-        diagnostics["portfolio_exposure"] = round(
-
-            portfolio_exposure,
-
-            4,
-
-        )
+        diagnostics["portfolio_exposure"] = round(portfolio_exposure, 4)
 
         if portfolio_risk >= self.MAX_PORTFOLIO_RISK:
 
-            warnings.append(
+            warnings.append("Portfolio risk is above the allowed threshold.")
 
-                "Portfolio risk is above the allowed threshold."
+        # ==========================================================
+        # SECTOR RISK
+        # ==========================================================
 
-            )
-
-
-# ==========================================================
-# SECTOR RISK
-# ==========================================================
-
-        sector_exposure = float(
-
-            portfolio.get(
-
-                "sector_exposure",
-
-                0.0,
-
-            )
-
-        )
+        sector_exposure = float(portfolio.get("sector_exposure", 0.0))
 
         sector_risk = 0.0
 
@@ -782,117 +483,39 @@ class RiskManager:
 
         diagnostics["sector_risk"] = sector_risk
 
-        diagnostics["sector_exposure"] = round(
-
-            sector_exposure,
-
-            4,
-
-        )
+        diagnostics["sector_exposure"] = round(sector_exposure, 4)
 
         if sector_risk >= self.MAX_SECTOR_RISK:
 
-            warnings.append(
+            warnings.append("Sector concentration risk is high.")
 
-                "Sector concentration risk is high."
+        # ==========================================================
+        # CORRELATION RISK
+        # ==========================================================
 
-            )
-
-
-# ==========================================================
-# CORRELATION RISK
-# ==========================================================
-
-        correlation = float(
-
-            portfolio.get(
-
-                "correlation",
-
-                0.0,
-
-            )
-
-        )
+        correlation = float(portfolio.get("correlation", 0.0))
 
         correlation_risk = correlation * 100.0
 
-        correlation_risk = min(
+        correlation_risk = min(correlation_risk, 100.0)
 
-            correlation_risk,
+        diagnostics["correlation"] = round(correlation, 4)
 
-            100.0,
-
-        )
-
-        diagnostics["correlation"] = round(
-
-            correlation,
-
-            4,
-
-        )
-
-        diagnostics["correlation_risk"] = round(
-
-            correlation_risk,
-
-            2,
-
-        )
+        diagnostics["correlation_risk"] = round(correlation_risk, 2)
 
         if correlation_risk >= self.MAX_CORRELATION_RISK:
 
-            warnings.append(
+            warnings.append("Portfolio correlation is too high.")
 
-                "Portfolio correlation is too high."
+        # ==========================================================
+        # CAPITAL RISK
+        # ==========================================================
 
-            )
+        total_capital = float(portfolio.get("total_capital", 1.0))
 
+        available_cash = float(portfolio.get("available_cash", 0.0))
 
-# ==========================================================
-# CAPITAL RISK
-# ==========================================================
-
-        total_capital = float(
-
-            portfolio.get(
-
-                "total_capital",
-
-                1.0,
-
-            )
-
-        )
-
-        available_cash = float(
-
-            portfolio.get(
-
-                "available_cash",
-
-                0.0,
-
-            )
-
-        )
-
-        capital_ratio = (
-
-            available_cash
-
-            /
-
-            max(
-
-                total_capital,
-
-                1.0,
-
-            )
-
-        )
+        capital_ratio = available_cash / max(total_capital, 1.0)
 
         capital_risk = 0.0
 
@@ -916,111 +539,56 @@ class RiskManager:
 
             capital_risk = 10.0
 
-        diagnostics["capital_ratio"] = round(
-
-            capital_ratio,
-
-            4,
-
-        )
+        diagnostics["capital_ratio"] = round(capital_ratio, 4)
 
         diagnostics["capital_risk"] = capital_risk
 
         if capital_risk >= 70:
 
-            warnings.append(
-
-                "Available capital is critically low."
-
-            )
-# ==========================================================
-# RISK AGGREGATION
-# ==========================================================
+            warnings.append("Available capital is critically low.")
+        # ==========================================================
+        # RISK AGGREGATION
+        # ==========================================================
 
         risk_components = {
-
             "atr": atr_risk,
-
             "gap": gap_risk,
-
             "overnight": overnight_risk,
-
             "news": news_risk,
-
             "liquidity": liquidity_risk,
-
             "volatility": volatility_risk,
-
             "market": market_risk,
-
             "portfolio": portfolio_risk,
-
             "sector": sector_risk,
-
             "correlation": correlation_risk,
-
             "capital": capital_risk,
-
         }
 
-
-# ==========================================================
-# DYNAMIC RISK WEIGHTS
-# ==========================================================
+        # ==========================================================
+        # DYNAMIC RISK WEIGHTS
+        # ==========================================================
 
         weights = {
-
             "atr": 0.10,
-
             "gap": 0.08,
-
             "overnight": 0.08,
-
             "news": 0.10,
-
             "liquidity": 0.10,
-
             "volatility": 0.10,
-
             "market": 0.12,
-
             "portfolio": 0.12,
-
             "sector": 0.05,
-
             "correlation": 0.10,
-
             "capital": 0.05,
-
         }
 
         total_risk = 0.0
 
         for name, value in risk_components.items():
 
-            total_risk += (
+            total_risk += value * weights[name]
 
-                value
-
-                *
-
-                weights[name]
-
-            )
-
-        total_risk = round(
-
-            min(
-
-                total_risk,
-
-                100.0,
-
-            ),
-
-            2,
-
-        )
+        total_risk = round(min(total_risk, 100.0), 2)
 
         diagnostics["weighted_total_risk"] = total_risk
 
@@ -1028,10 +596,9 @@ class RiskManager:
 
         diagnostics["risk_weights"] = weights
 
-
-# ==========================================================
-# RISK GRADE
-# ==========================================================
+        # ==========================================================
+        # RISK GRADE
+        # ==========================================================
 
         if total_risk <= 10:
 
@@ -1059,77 +626,36 @@ class RiskManager:
 
         diagnostics["risk_grade"] = risk_grade
 
+        # ==========================================================
+        # SAFE / RISKY
+        # ==========================================================
 
-# ==========================================================
-# SAFE / RISKY
-# ==========================================================
-
-        safe = (
-
-            total_risk
-
-            <=
-
-            self.MAX_TOTAL_RISK
-
-        )
+        safe = total_risk <= self.MAX_TOTAL_RISK
 
         diagnostics["safe"] = safe
 
         if safe:
 
-            logger.info(
-
-                "Risk evaluation passed."
-
-            )
+            logger.info("Risk evaluation passed.")
 
         else:
 
-            warnings.append(
+            warnings.append("Overall portfolio risk exceeds the configured threshold.")
 
-                "Overall portfolio risk exceeds the configured threshold."
-
-            )
-
-            logger.warning(
-
-                "Trade classified as HIGH RISK."
-
-            )
-# ==========================================================
-# RISK OVERRIDES
-# ==========================================================
+            logger.warning("Trade classified as HIGH RISK.")
+        # ==========================================================
+        # RISK OVERRIDES
+        # ==========================================================
 
         # --------------------------------------------------
         # HIGH IMPACT EVENT
         # --------------------------------------------------
 
-        if bool(
+        if bool(market.get("event_day", False)):
 
-            market.get(
+            total_risk = min(total_risk + 15.0, 100.0)
 
-                "event_day",
-
-                False,
-
-            )
-
-        ):
-
-            total_risk = min(
-
-                total_risk + 15.0,
-
-                100.0,
-
-            )
-
-            warnings.append(
-
-                "High-impact market event."
-
-            )
+            warnings.append("High-impact market event.")
 
             diagnostics["event_override"] = True
 
@@ -1137,26 +663,15 @@ class RiskManager:
 
             diagnostics["event_override"] = False
 
-
         # --------------------------------------------------
         # VIX SPIKE
         # --------------------------------------------------
 
         if vix >= 35:
 
-            total_risk = min(
+            total_risk = min(total_risk + 10.0, 100.0)
 
-                total_risk + 10.0,
-
-                100.0,
-
-            )
-
-            warnings.append(
-
-                "Extreme VIX detected."
-
-            )
+            warnings.append("Extreme VIX detected.")
 
             diagnostics["vix_override"] = True
 
@@ -1164,32 +679,17 @@ class RiskManager:
 
             diagnostics["vix_override"] = False
 
-
         # --------------------------------------------------
         # CIRCUIT BREAKER
         # --------------------------------------------------
 
-        if bool(
-
-            latest.get(
-
-                "circuit_breaker",
-
-                False,
-
-            )
-
-        ):
+        if bool(latest.get("circuit_breaker", False)):
 
             total_risk = 100.0
 
             safe = False
 
-            warnings.append(
-
-                "Circuit breaker active."
-
-            )
+            warnings.append("Circuit breaker active.")
 
             diagnostics["circuit_override"] = True
 
@@ -1197,26 +697,15 @@ class RiskManager:
 
             diagnostics["circuit_override"] = False
 
-
         # --------------------------------------------------
         # NEWS SHOCK
         # --------------------------------------------------
 
         if news_risk >= 90:
 
-            total_risk = min(
+            total_risk = min(total_risk + 15.0, 100.0)
 
-                total_risk + 15.0,
-
-                100.0,
-
-            )
-
-            warnings.append(
-
-                "Extreme news shock detected."
-
-            )
+            warnings.append("Extreme news shock detected.")
 
             diagnostics["news_override"] = True
 
@@ -1224,22 +713,11 @@ class RiskManager:
 
             diagnostics["news_override"] = False
 
-
         # --------------------------------------------------
         # PORTFOLIO EMERGENCY STOP
         # --------------------------------------------------
 
-        emergency_stop = bool(
-
-            portfolio.get(
-
-                "emergency_stop",
-
-                False,
-
-            )
-
-        )
+        emergency_stop = bool(portfolio.get("emergency_stop", False))
 
         if emergency_stop:
 
@@ -1249,40 +727,21 @@ class RiskManager:
 
             risk_grade = "F"
 
-            warnings.append(
-
-                "Portfolio emergency stop enabled."
-
-            )
+            warnings.append("Portfolio emergency stop enabled.")
 
         diagnostics["emergency_stop"] = emergency_stop
-
 
         # --------------------------------------------------
         # DAILY LOSS LOCK
         # --------------------------------------------------
 
-        if float(
-
-            portfolio.get(
-
-                "daily_loss",
-
-                0.0,
-
-            )
-
-        ) >= self.MAX_DAILY_LOSS:
+        if float(portfolio.get("daily_loss", 0.0)) >= self.MAX_DAILY_LOSS:
 
             safe = False
 
             total_risk = 100.0
 
-            warnings.append(
-
-                "Daily loss limit reached."
-
-            )
+            warnings.append("Daily loss limit reached.")
 
             diagnostics["daily_loss_lock"] = True
 
@@ -1290,24 +749,11 @@ class RiskManager:
 
             diagnostics["daily_loss_lock"] = False
 
-
         # --------------------------------------------------
         # FINALIZE AFTER OVERRIDES
         # --------------------------------------------------
 
-        total_risk = round(
-
-            min(
-
-                total_risk,
-
-                100.0,
-
-            ),
-
-            2,
-
-        )
+        total_risk = round(min(total_risk, 100.0), 2)
 
         if total_risk > self.MAX_TOTAL_RISK:
 
@@ -1316,40 +762,31 @@ class RiskManager:
         diagnostics["total_risk_after_overrides"] = total_risk
 
         diagnostics["safe_after_overrides"] = safe
-# ==========================================================
-# AI RISK RECOMMENDATIONS
-# ==========================================================
+        # ==========================================================
+        # AI RISK RECOMMENDATIONS
+        # ==========================================================
 
         recommendations: list[str] = []
 
         if total_risk <= 15:
 
-            recommendations.append(
-                "Normal position sizing allowed."
-            )
+            recommendations.append("Normal position sizing allowed.")
 
         elif total_risk <= 30:
 
-            recommendations.append(
-                "Use reduced position sizing."
-            )
+            recommendations.append("Use reduced position sizing.")
 
         elif total_risk <= 50:
 
-            recommendations.append(
-                "Trade only with high-conviction setups."
-            )
+            recommendations.append("Trade only with high-conviction setups.")
 
         else:
 
-            recommendations.append(
-                "Avoid opening new positions."
-            )
+            recommendations.append("Avoid opening new positions.")
 
-
-# ==========================================================
-# POSITION RISK LEVEL
-# ==========================================================
+        # ==========================================================
+        # POSITION RISK LEVEL
+        # ==========================================================
 
         if total_risk <= 10:
 
@@ -1371,14 +808,11 @@ class RiskManager:
 
             position_risk = "EXTREME"
 
-        diagnostics["position_risk"] = (
-            position_risk
-        )
+        diagnostics["position_risk"] = position_risk
 
-
-# ==========================================================
-# EXPOSURE RECOMMENDATION
-# ==========================================================
+        # ==========================================================
+        # EXPOSURE RECOMMENDATION
+        # ==========================================================
 
         if total_risk <= 15:
 
@@ -1400,353 +834,182 @@ class RiskManager:
 
             recommended_exposure = 0.00
 
-        diagnostics["recommended_exposure"] = (
-            recommended_exposure
-        )
+        diagnostics["recommended_exposure"] = recommended_exposure
 
-        recommendations.append(
+        recommendations.append(f"Recommended exposure: {recommended_exposure:.0%}")
 
-            f"Recommended exposure: {recommended_exposure:.0%}"
-
-        )
-
-
-# ==========================================================
-# TRADE RESTRICTIONS
-# ==========================================================
+        # ==========================================================
+        # TRADE RESTRICTIONS
+        # ==========================================================
 
         restrictions: list[str] = []
 
         if atr_risk >= 70:
 
-            restrictions.append(
-                "High ATR"
-            )
+            restrictions.append("High ATR")
 
         if volatility_risk >= 70:
 
-            restrictions.append(
-                "High Volatility"
-            )
+            restrictions.append("High Volatility")
 
         if liquidity_risk >= 60:
 
-            restrictions.append(
-                "Low Liquidity"
-            )
+            restrictions.append("Low Liquidity")
 
         if news_risk >= 70:
 
-            restrictions.append(
-                "High News Risk"
-            )
+            restrictions.append("High News Risk")
 
         if portfolio_risk >= self.MAX_PORTFOLIO_RISK:
 
-            restrictions.append(
-                "Portfolio Risk"
-            )
+            restrictions.append("Portfolio Risk")
 
         if correlation_risk >= self.MAX_CORRELATION_RISK:
 
-            restrictions.append(
-                "High Correlation"
-            )
+            restrictions.append("High Correlation")
 
         diagnostics["restrictions"] = restrictions
 
         if restrictions:
 
-            warnings.append(
+            warnings.append("Trade restrictions: " + ", ".join(restrictions))
 
-                "Trade restrictions: "
+        # ==========================================================
+        # STORE AI RECOMMENDATIONS
+        # ==========================================================
 
-                + ", ".join(restrictions)
+        diagnostics["recommendations"] = recommendations
 
-            )
-
-
-# ==========================================================
-# STORE AI RECOMMENDATIONS
-# ==========================================================
-
-        diagnostics["recommendations"] = (
-            recommendations
-        )
-
-        logger.info(
-
-            "Risk recommendations prepared."
-
-        )
-# ==========================================================
-# RISK BREAKDOWN
-# ==========================================================
+        logger.info("Risk recommendations prepared.")
+        # ==========================================================
+        # RISK BREAKDOWN
+        # ==========================================================
 
         risk_breakdown = {
-
             "atr": atr_risk,
-
             "gap": gap_risk,
-
             "overnight": overnight_risk,
-
             "news": news_risk,
-
             "liquidity": liquidity_risk,
-
             "volatility": volatility_risk,
-
             "market": market_risk,
-
             "portfolio": portfolio_risk,
-
             "sector": sector_risk,
-
             "correlation": correlation_risk,
-
             "capital": capital_risk,
-
         }
 
         diagnostics["risk_breakdown"] = risk_breakdown
 
-
-# ==========================================================
-# SORT RISK COMPONENTS
-# ==========================================================
+        # ==========================================================
+        # SORT RISK COMPONENTS
+        # ==========================================================
 
         ranked_risks = sorted(
-
             risk_breakdown.items(),
-
             key=lambda item: item[1],
-
             reverse=True,
-
         )
 
         diagnostics["ranked_risks"] = ranked_risks
 
-
-# ==========================================================
-# HIGHEST RISK
-# ==========================================================
+        # ==========================================================
+        # HIGHEST RISK
+        # ==========================================================
 
         highest_risk_name = ranked_risks[0][0]
 
         highest_risk_value = ranked_risks[0][1]
 
         diagnostics["highest_risk"] = {
-
             "name": highest_risk_name,
-
             "value": highest_risk_value,
-
         }
 
         if highest_risk_value >= 70:
 
-            warnings.append(
+            warnings.append(f"Primary risk source: {highest_risk_name}")
 
-                f"Primary risk source: {highest_risk_name}"
-
-            )
-
-
-# ==========================================================
-# RISK DISTRIBUTION
-# ==========================================================
+        # ==========================================================
+        # RISK DISTRIBUTION
+        # ==========================================================
 
         diagnostics["risk_distribution"] = {
-
-            "low": sum(
-
-                value < 30
-
-                for value in risk_breakdown.values()
-
-            ),
-
-            "medium": sum(
-
-                30 <= value < 60
-
-                for value in risk_breakdown.values()
-
-            ),
-
-            "high": sum(
-
-                value >= 60
-
-                for value in risk_breakdown.values()
-
-            ),
-
+            "low": sum(value < 30 for value in risk_breakdown.values()),
+            "medium": sum(30 <= value < 60 for value in risk_breakdown.values()),
+            "high": sum(value >= 60 for value in risk_breakdown.values()),
         }
 
+        # ==========================================================
+        # RISK ANALYTICS
+        # ==========================================================
 
-# ==========================================================
-# RISK ANALYTICS
-# ==========================================================
-
-        average_risk = round(
-
-            sum(
-
-                risk_breakdown.values()
-
-            )
-
-            /
-
-            len(
-
-                risk_breakdown
-
-            ),
-
-            2,
-
-        )
+        average_risk = round(sum(risk_breakdown.values()) / len(risk_breakdown), 2)
 
         diagnostics["average_risk"] = average_risk
 
-        diagnostics["maximum_risk"] = round(
+        diagnostics["maximum_risk"] = round(max(risk_breakdown.values()), 2)
 
-            max(
+        diagnostics["minimum_risk"] = round(min(risk_breakdown.values()), 2)
 
-                risk_breakdown.values()
-
-            ),
-
-            2,
-
-        )
-
-        diagnostics["minimum_risk"] = round(
-
-            min(
-
-                risk_breakdown.values()
-
-            ),
-
-            2,
-
-        )
-
-
-# ==========================================================
-# AI SUMMARY
-# ==========================================================
+        # ==========================================================
+        # AI SUMMARY
+        # ==========================================================
 
         diagnostics["summary"] = {
-
-            "safe":
-
-                safe,
-
-            "risk_grade":
-
-                risk_grade,
-
-            "total_risk":
-
-                total_risk,
-
-            "highest_risk":
-
-                highest_risk_name,
-
-            "warning_count":
-
-                len(warnings),
-
+            "safe": safe,
+            "risk_grade": risk_grade,
+            "total_risk": total_risk,
+            "highest_risk": highest_risk_name,
+            "warning_count": len(warnings),
         }
 
-        logger.info(
-
-            "Risk analytics completed."
-
-        )
-# ==========================================================
-# FINAL RISK VALIDATION
-# ==========================================================
+        logger.info("Risk analytics completed.")
+        # ==========================================================
+        # FINAL RISK VALIDATION
+        # ==========================================================
 
         validation_errors: list[str] = []
 
         if not (0.0 <= total_risk <= 100.0):
 
-            validation_errors.append(
-                "Total risk out of range."
-            )
+            validation_errors.append("Total risk out of range.")
 
         if risk_grade not in {
-
             "A+",
-
             "A",
-
             "B",
-
             "C",
-
             "D",
-
             "F",
-
         }:
 
-            validation_errors.append(
-                "Invalid risk grade."
-            )
+            validation_errors.append("Invalid risk grade.")
 
         risk_fields = {
-
             "atr": atr_risk,
-
             "gap": gap_risk,
-
             "overnight": overnight_risk,
-
             "news": news_risk,
-
             "liquidity": liquidity_risk,
-
             "volatility": volatility_risk,
-
             "portfolio": portfolio_risk,
-
             "sector": sector_risk,
-
             "correlation": correlation_risk,
-
             "capital": capital_risk,
-
         }
 
         for name, value in risk_fields.items():
 
             if not (0.0 <= value <= 100.0):
 
-                validation_errors.append(
+                validation_errors.append(f"{name} risk out of range.")
 
-                    f"{name} risk out of range."
+        diagnostics["validation_errors"] = validation_errors
 
-                )
-
-        diagnostics["validation_errors"] = (
-
-            validation_errors
-
-        )
-
-
-# ==========================================================
-# FAIL SAFE
-# ==========================================================
+        # ==========================================================
+        # FAIL SAFE
+        # ==========================================================
 
         if validation_errors:
 
@@ -1756,18 +1019,11 @@ class RiskManager:
 
             risk_grade = "F"
 
-            warnings.append(
-
-                "Risk manager internal validation failed."
-
-            )
+            warnings.append("Risk manager internal validation failed.")
 
             logger.error(
-
                 "Risk validation failed: %s",
-
                 validation_errors,
-
             )
 
             diagnostics["fail_safe"] = True
@@ -1776,240 +1032,108 @@ class RiskManager:
 
             diagnostics["fail_safe"] = False
 
-
-# ==========================================================
-# BUILD RESULT
-# ==========================================================
+        # ==========================================================
+        # BUILD RESULT
+        # ==========================================================
 
         result = RiskResult(
-
             safe=safe,
-
-            total_risk=round(
-
-                total_risk,
-
-                2,
-
-            ),
-
+            total_risk=round(total_risk, 2),
             risk_grade=risk_grade,
-
-            atr_risk=round(
-
-                atr_risk,
-
-                2,
-
-            ),
-
-            gap_risk=round(
-
-                gap_risk,
-
-                2,
-
-            ),
-
-            overnight_risk=round(
-
-                overnight_risk,
-
-                2,
-
-            ),
-
-            news_risk=round(
-
-                news_risk,
-
-                2,
-
-            ),
-
-            liquidity_risk=round(
-
-                liquidity_risk,
-
-                2,
-
-            ),
-
-            volatility_risk=round(
-
-                volatility_risk,
-
-                2,
-
-            ),
-
-            portfolio_risk=round(
-
-                portfolio_risk,
-
-                2,
-
-            ),
-
-            sector_risk=round(
-
-                sector_risk,
-
-                2,
-
-            ),
-
-            correlation_risk=round(
-
-                correlation_risk,
-
-                2,
-
-            ),
-
-            capital_risk=round(
-
-                capital_risk,
-
-                2,
-
-            ),
-
+            atr_risk=round(atr_risk, 2),
+            gap_risk=round(gap_risk, 2),
+            overnight_risk=round(overnight_risk, 2),
+            news_risk=round(news_risk, 2),
+            liquidity_risk=round(liquidity_risk, 2),
+            volatility_risk=round(volatility_risk, 2),
+            portfolio_risk=round(portfolio_risk, 2),
+            sector_risk=round(sector_risk, 2),
+            correlation_risk=round(correlation_risk, 2),
+            capital_risk=round(capital_risk, 2),
             warnings=warnings,
-
             diagnostics=diagnostics,
-
         )
 
-        logger.info(
+        logger.info("RiskResult created successfully.")
+        return result  # <--- FIXED: Added missing return statement
 
-            "RiskResult created successfully."
-
-        )
     def evaluate_order(self, order, portfolio, market="NORMAL"):
-    """
-    COMPATIBILITY WRAPPER FOR ORCHESTRATOR + TESTS
-    """
+        """
+        COMPATIBILITY WRAPPER FOR ORCHESTRATOR + TESTS
+        """
 
-    class V:
-        passed = True
+        class V:
+            passed = True
 
-    class D:
-        pass
+        class D:
+            pass
 
-    import pandas as pd
+        import pandas as pd
 
-    dataframe = order.get("dataframe", None)
+        dataframe = order.get("dataframe", None)
 
-    if dataframe is None:
-        dataframe = pd.DataFrame([{
-            "close": 100,
-            "atr_14": 1,
-            "volume_sma_20": 1000000
-        }])
+        if dataframe is None:
+            dataframe = pd.DataFrame(
+                [{"close": 100, "atr_14": 1, "volume_sma_20": 1000000}]
+            )
 
-    return self.evaluate(
-        validation=V(),
-        decision=D(),
-        dataframe=dataframe,
-        portfolio=portfolio,
-        market={"regime": market}
-    )
-# ==========================================================
-# EXPORT
-# ==========================================================
+        return self.evaluate(
+            validation=V(),
+            decision=D(),
+            dataframe=dataframe,
+            portfolio=portfolio,
+            market={"regime": market},
+        )
+
+    # ==========================================================
+    # EXPORT
+    # ==========================================================
 
     @staticmethod
-    def to_dict(
-        result: RiskResult,
-    ) -> dict[str, Any]:
+    def to_dict(result: RiskResult) -> dict[str, Any]:
 
         return {
-
-            "safe":
-                result.safe,
-
-            "total_risk":
-                result.total_risk,
-
-            "risk_grade":
-                result.risk_grade,
-
-            "atr_risk":
-                result.atr_risk,
-
-            "gap_risk":
-                result.gap_risk,
-
-            "overnight_risk":
-                result.overnight_risk,
-
-            "news_risk":
-                result.news_risk,
-
-            "liquidity_risk":
-                result.liquidity_risk,
-
-            "volatility_risk":
-                result.volatility_risk,
-
-            "portfolio_risk":
-                result.portfolio_risk,
-
-            "sector_risk":
-                result.sector_risk,
-
-            "correlation_risk":
-                result.correlation_risk,
-
-            "capital_risk":
-                result.capital_risk,
-
-            "warnings":
-                result.warnings,
-
-            "diagnostics":
-                result.diagnostics,
-
+            "safe": result.safe,
+            "total_risk": result.total_risk,
+            "risk_grade": result.risk_grade,
+            "atr_risk": result.atr_risk,
+            "gap_risk": result.gap_risk,
+            "overnight_risk": result.overnight_risk,
+            "news_risk": result.news_risk,
+            "liquidity_risk": result.liquidity_risk,
+            "volatility_risk": result.volatility_risk,
+            "portfolio_risk": result.portfolio_risk,
+            "sector_risk": result.sector_risk,
+            "correlation_risk": result.correlation_risk,
+            "capital_risk": result.capital_risk,
+            "warnings": result.warnings,
+            "diagnostics": result.diagnostics,
         }
 
-
-# ==========================================================
-# SUMMARY
-# ==========================================================
+    # ==========================================================
+    # SUMMARY
+    # ==========================================================
 
     @staticmethod
-    def summary(
-        result: RiskResult,
-    ) -> str:
+    def summary(result: RiskResult) -> str:
 
         status = "SAFE" if result.safe else "RISKY"
 
         return (
-
             f"{status}"
-
             f" | Grade={result.risk_grade}"
-
             f" | Risk={result.total_risk:.2f}%"
-
             f" | ATR={result.atr_risk:.2f}"
-
             f" | News={result.news_risk:.2f}"
-
             f" | Portfolio={result.portfolio_risk:.2f}"
-
         )
 
-
-# ==========================================================
-# DEBUG REPORT
-# ==========================================================
+    # ==========================================================
+    # DEBUG REPORT
+    # ==========================================================
 
     @staticmethod
-    def debug_report(
-        result: RiskResult,
-    ) -> str:
+    def debug_report(result: RiskResult) -> str:
 
         report: list[str] = []
 
@@ -2018,17 +1142,11 @@ class RiskManager:
         report.append("=" * 70)
         report.append("")
 
-        report.append(
-            f"Status              : {'SAFE' if result.safe else 'RISKY'}"
-        )
+        report.append(f"Status              : {'SAFE' if result.safe else 'RISKY'}")
 
-        report.append(
-            f"Risk Grade          : {result.risk_grade}"
-        )
+        report.append(f"Risk Grade          : {result.risk_grade}")
 
-        report.append(
-            f"Total Risk          : {result.total_risk:.2f}%"
-        )
+        report.append(f"Total Risk          : {result.total_risk:.2f}%")
 
         report.append("")
 
@@ -2036,7 +1154,6 @@ class RiskManager:
         report.append("-" * 70)
 
         components = [
-
             ("ATR", result.atr_risk),
             ("Gap", result.gap_risk),
             ("Overnight", result.overnight_risk),
@@ -2047,14 +1164,11 @@ class RiskManager:
             ("Sector", result.sector_risk),
             ("Correlation", result.correlation_risk),
             ("Capital", result.capital_risk),
-
         ]
 
         for name, value in components:
 
-            report.append(
-                f"{name:<20} : {value:.2f}"
-            )
+            report.append(f"{name:<20} : {value:.2f}")
 
         report.append("")
         report.append("Warnings")
@@ -2064,9 +1178,7 @@ class RiskManager:
 
             for warning in result.warnings:
 
-                report.append(
-                    f"• {warning}"
-                )
+                report.append(f"• {warning}")
 
         else:
 
@@ -2076,13 +1188,9 @@ class RiskManager:
         report.append("Diagnostics")
         report.append("-" * 70)
 
-        for key, value in sorted(
-            result.diagnostics.items()
-        ):
+        for key, value in sorted(result.diagnostics.items()):
 
-            report.append(
-                f"{key:<30} : {value}"
-            )
+            report.append(f"{key:<30} : {value}")
 
         report.append("")
         report.append("=" * 70)

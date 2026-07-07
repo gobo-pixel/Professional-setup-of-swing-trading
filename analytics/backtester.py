@@ -23,6 +23,7 @@ import pandas as pd
 from core.logger import get_logger
 
 from execution.scanner import MarketScanner
+from portfolio.portfolio import PortfolioEngine, PortfolioState
 from execution.tracker import PositionTracker, PositionState
 from execution.broker import BrokerEngine
 
