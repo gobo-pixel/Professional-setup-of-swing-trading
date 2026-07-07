@@ -49,22 +49,28 @@ class MarketScanner:
     """
 
     def __init__(self):
-        # Fixed: Using the actual class imported/available
-        self.market = MarketData()
+        # Professional Standard: Use the actual Data Engine for pipeline management, not a single raw dataclass model
+        try:
+            from data.data_engine import DataEngine
+            self.data_engine = DataEngine()
+        except ImportError:
+            self.data_engine = None
+            logger.warning("DataEngine could not be imported. Scanner will rely on direct data injection parameters.")
+
         self.features = FeatureEngineeringEngine()
-        self.buy_strategy = BuyStrategyEngine()
-        self.sell_strategy = SellStrategyEngine()
+        self.buy_strat = BuyStrategyEngine()
+        self.sell_strat = SellStrategyEngine()
         self.buy_score = BuyScoringEngine()
         self.sell_score = SellScoringEngine()
-        self.buy_probability = BuyProbabilityEngine()
-        self.sell_probability = SellProbabilityEngine()
-        self.decision = DecisionEngine()
+        self.buy_prob = BuyProbabilityEngine()
+        self.sell_prob = SellProbabilityEngine()
+        self.decision_engine = DecisionEngine()
         self.validation = ValidationEngine()
         self.risk = RiskManager()
-        self.position = PositionSizingEngine()
-        self.portfolio = PortfolioRulesEngine()
+        self.sizer = PositionSizingEngine()
+        self.rules = PortfolioRulesEngine()
 
-        logger.info("Market Scanner successfully initialized and synchronized.")
+        logger.info("Market Scanner Engine initialized under professional pipeline contracts.")
 
     def prepare_orders(
         self, decision: Any, signals: dict[str, Any], portfolio: dict[str, Any]
