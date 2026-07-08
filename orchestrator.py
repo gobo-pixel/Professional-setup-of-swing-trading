@@ -47,14 +47,14 @@ class OrchestratorContext:
     mode: str  # LIVE / BACKTEST / PAPER
     cycle_id: int = 0
     timestamp: float = 0.0
-    last_data: Any = None
-    last_features: Any = None
-    last_signals: Any = None
-    last_decision: Any = None
-    last_risk: Any = None
-    last_execution: Any = None
-    last_portfolio: Dict[str, Any] = None
-    last_analytics: Any = None
+    last_data: Optional[Any] = None
+    last_features: Optional[Any] = None
+    last_signals: Optional[Any] = None
+    last_decision: Optional[Any] = None
+    last_risk: Optional[Any] = None
+    last_execution: Optional[Any] = None
+    last_portfolio: Optional[Dict[str, Any]] = None
+    last_analytics: Optional[Any] = None
 
 
 # ==========================================================
@@ -87,8 +87,12 @@ class WiredOrchestrator:
     # ==========================================================
 
     def run_cycle(
-        self, symbols: list[str], portfolio_state: Any
+        self, symbols: list[str], portfolio_state: Any, market_data: Optional[Dict[str, Any]] = None
     ) -> OrchestratorContext:
+        """Run a single orchestrator cycle.
+
+        market_data: Optional override for the data fetch step (used in backtests).
+        """
         self.context.cycle_id += 1
         self.context.timestamp = time.time()
 
@@ -97,7 +101,11 @@ class WiredOrchestrator:
         )
 
         # STEP 1: DATA FETCH
-        data = self.data_engine.get_market_data(symbols)
+        if market_data is not None:
+            data = market_data
+        else:
+            data = self.data_engine.get_market_data(symbols)
+
         self.context.last_data = data
         if not data or (isinstance(data, dict) and len(data) == 0):
             logger.error(
@@ -111,6 +119,7 @@ class WiredOrchestrator:
 
         # STEP 3: MARKET REGIME DETECTION
         regime = self.market.detect(features)
+        # store minimal regime info (risk will be updated by risk engine later)
         self.context.last_risk = {"regime": regime}
 
         # STEP 4: STRATEGY SIGNAL GENERATION (Synchronized Parameters)
@@ -167,7 +176,10 @@ class WiredOrchestrator:
         # STEP 8: ORDER SUBMISSION TO BROKER ENGINE
         executed_orders = []
         for order in scan_candidates:
-            if order.action in ["BUY", "SELL"] and order.portfolio_allowed:
+            # support both object-like and dict-like orders
+            action = getattr(order, "action", None) or order.get("action") if isinstance(order, dict) else None
+            portfolio_allowed = getattr(order, "portfolio_allowed", None) or order.get("portfolio_allowed") if isinstance(order, dict) else None
+            if action in ["BUY", "SELL"] and portfolio_allowed:
                 result = self.broker.execute_order(order=order, mode=self.mode)
                 executed_orders.append(result)
 
@@ -234,22 +246,26 @@ class WiredOrchestrator:
                 break
 
     def run_backtest(
-        self, historical_data: dict[str, Any], portfolio_state: Any
-    ) -> list[OrchestratorContext]:
+        self, historical_data: Dict[str, Any], portfolio_state: Any
+    ) -> List[OrchestratorContext]:
         logger.info("HISTORICAL PERFORMANCE SIMULATION ENGINE TRIGGERED")
-        results = []
+        results: List[OrchestratorContext] = []
         if not historical_data:
             logger.warning(
                 "No historical feed records passed to simulator. Exiting run loop execution context."
             )
             return results
 
-        total_steps = len(next(iter(historical_data.values())))
+        # determine number of steps from the first instrument in the feed
+        first_feed = next(iter(historical_data.values()))
+        total_steps = len(first_feed)
         for step in range(total_steps):
+            # slice each instrument feed up to the current step
             sliced_data = {k: v.iloc[: step + 1] for k, v in historical_data.items()}
             self.context.timestamp = time.time()
+            # pass the sliced market data to run_cycle to ensure backtest determinism
             ctx = self.run_cycle(
-                symbols=list(historical_data.keys()), portfolio_state=portfolio_state
+                symbols=list(historical_data.keys()), portfolio_state=portfolio_state, market_data=sliced_data
             )
             results.append(ctx)
         return results
@@ -319,7 +335,7 @@ class WiredOrchestrator:
             return True
         return False
 
-    def circuit_breaker(self, risk_check: dict[str, Any]) -> bool:
+    def circuit_breaker(self, risk_check: Dict[str, Any]) -> bool:
         if risk_check.get("volatility", 0.0) > 0.03:
             logger.warning(
                 "CIRCUIT BREAKER ENGAGED: MAXIMUM ASSET SYSTEM VOLATILITY BREACHED"
@@ -338,7 +354,7 @@ class WiredOrchestrator:
             return False
         return True
 
-    def pre_cycle_guard(self, portfolio_state: Any, risk_check: dict[str, Any]) -> bool:
+    def pre_cycle_guard(self, portfolio_state: Any, risk_check: Dict[str, Any]) -> bool:
         if self.kill_switch(portfolio_state):
             self.emergency_stop()
             return False
@@ -347,7 +363,7 @@ class WiredOrchestrator:
             return False
         return True
 
-    def debug_snapshot(self) -> dict[str, Any]:
+    def debug_snapshot(self) -> Dict[str, Any]:
         return {
             "cycle_id": self.context.cycle_id,
             "mode": self.mode,
